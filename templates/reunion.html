@@ -3,120 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reunión - Sistema de Asistencia</title>
+    <title>Reunión: {{ token }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <style>
+        #chat-box {
+            height: 300px;
+            overflow-y: scroll;
+        }
+        #turn-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
 </head>
 <body>
     <div class="container mt-3">
         <h1 class="text-center mb-4">Reunión: {{ token }}</h1>
-        <h2 class="text-center mb-3">Bienvenido, {{ nombre_completo }}</h2>
+        <h2 class="text-center mb-3">Bienvenido, {{ nombre_completo }} ({{ token_extendido }})</h2>
+
         <div class="row">
             <div class="col-md-8">
-                <div id="chat-box" class="border p-3 mb-3" style="height: 300px; overflow-y: scroll;">
-                    <!-- Aquí se mostrarán los mensajes del chat -->
+                <div id="chat-box" class="border p-3 mb-3"></div>
+                <div class="input-group mb-3">
+                    <input type="text" id="message-input" class="form-control" placeholder="Escribe tu mensaje...">
+                    <button id="send-button" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Enviar
+                    </button>
                 </div>
-                <form id="chat-form">
-                    <div class="input-group mb-3">
-                        <input type="text" id="message-input" class="form-control" placeholder="Escriba su mensaje...">
-                        <button class="btn btn-primary" type="submit">
-                            <i class="fas fa-paper-plane"></i> Enviar
-                        </button>
-                    </div>
-                </form>
             </div>
             <div class="col-md-4">
-                <button id="toggle-hand" class="btn btn-warning mb-3 w-100">
+                <button id="raise-hand-button" class="btn btn-warning mb-3">
                     <i class="fas fa-hand-paper"></i> Levantar Mano
                 </button>
                 <div id="hand-raised-list" class="border p-3">
                     <h3>Manos Levantadas</h3>
-                    <ul id="hands-list" class="list-group">
-                        <!-- Aquí se mostrarán las manos levantadas -->
-                    </ul>
                 </div>
             </div>
         </div>
     </div>
 
+    <div id="turn-notification" class="alert alert-success" role="alert">
+        <i class="fas fa-microphone"></i> ¡Es tu turno para hablar!
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        const socket = io({query: {token: '{{ token }}'}});
-        const chatForm = document.getElementById('chat-form');
-        const messageInput = document.getElementById('message-input');
-        const chatBox = document.getElementById('chat-box');
-        const toggleHandButton = document.getElementById('toggle-hand');
-        const handsList = document.getElementById('hands-list');
-
-        const nombreCompleto = '{{ nombre_completo }}';
-        let handRaised = false;
-
-        socket.on('connect', () => {
-            socket.emit('join', {token: '{{ token }}', username: nombreCompleto});
-        });
-
-        chatForm.addEventListener('submit', (e) => {
-		e.preventDefault();
-	    	if (messageInput.value) {
-	        const message = `${nombreCompleto}: ${messageInput.value}`;
-        	socket.emit('chat message', {token: '{{ token }}', message: message});
-        	messageInput.value = '';
-	    }
-	});
-
-        socket.on('chat message', (msg) => {
-            appendMessage(msg);
-        });
-
-        socket.on('chat history', (history) => {
-            chatBox.innerHTML = '';
-            history.forEach(appendMessage);
-        });
-
-        function appendMessage(msg) {
-            const item = document.createElement('div');
-            item.textContent = msg;
-            chatBox.appendChild(item);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        toggleHandButton.addEventListener('click', () => {
-            if (handRaised) {
-                socket.emit('lower hand', {token: '{{ token }}', user: nombreCompleto});
-                toggleHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Levantar Mano';
-                toggleHandButton.classList.remove('btn-danger');
-                toggleHandButton.classList.add('btn-warning');
-            } else {
-                socket.emit('raise hand', {token: '{{ token }}', user: nombreCompleto});
-                toggleHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Bajar Mano';
-                toggleHandButton.classList.remove('btn-warning');
-                toggleHandButton.classList.add('btn-danger');
-            }
-            handRaised = !handRaised;
-        });
-
-        socket.on('update hands', (users) => {
-            handsList.innerHTML = '';
-            users.forEach(user => {
-                const item = document.createElement('li');
-                item.className = 'list-group-item';
-                item.textContent = user;
-                handsList.appendChild(item);
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const socket = io({
+                query: {
+                    token: '{{ token }}'
+                }
             });
-            if (!users.includes(nombreCompleto)) {
-                handRaised = false;
-                toggleHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Levantar Mano';
-                toggleHandButton.classList.remove('btn-danger');
-                toggleHandButton.classList.add('btn-warning');
-            }
-        });
 
-        socket.on('update participants', (participants) => {
-            console.log('Participantes actualizados:', participants);
-            // Aquí puedes agregar lógica para mostrar la lista de participantes si lo deseas
+            const chatBox = document.getElementById('chat-box');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const raiseHandButton = document.getElementById('raise-hand-button');
+            const handRaisedList = document.getElementById('hand-raised-list');
+            const turnNotification = document.getElementById('turn-notification');
+
+            let handRaised = false;
+
+            socket.on('connect', () => {
+                console.log('Conectado al servidor');
+                socket.emit('join', { token: '{{ token }}', username: '{{ nombre_completo }}' });
+            });
+
+            socket.on('chat history', (messages) => {
+                chatBox.innerHTML = '';
+                messages.forEach((msg) => {
+                    appendMessage(msg);
+                });
+            });
+
+            socket.on('chat message', (msg) => {
+                appendMessage(msg);
+            });
+
+            socket.on('update hands', (hands) => {
+                updateHandRaisedList(hands);
+                if (!hands.includes('{{ nombre_completo }}')) {
+                    handRaised = false;
+                    raiseHandButton.classList.replace('btn-secondary', 'btn-warning');
+                    raiseHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Levantar Mano';
+                }
+            });
+
+            socket.on('update participants', (participants) => {
+                console.log('Participantes actualizados:', participants);
+                // Actualizar la lista de participantes en la interfaz si es necesario
+            });
+
+            socket.on('your turn', (data) => {
+                if (data.user === '{{ nombre_completo }}') {
+                    turnNotification.style.display = 'block';
+                    setTimeout(() => {
+                        turnNotification.style.display = 'none';
+                    }, 5000);
+                }
+            });
+
+            sendButton.addEventListener('click', () => {
+                const message = messageInput.value.trim();
+                if (message) {
+                    socket.emit('chat message', { token: '{{ token }}', message: `{{ nombre_completo }}: ${message}` });
+                    messageInput.value = '';
+                }
+            });
+
+            raiseHandButton.addEventListener('click', () => {
+                handRaised = !handRaised;
+                if (handRaised) {
+                    socket.emit('raise hand', { token: '{{ token }}', user: '{{ nombre_completo }}' });
+                    raiseHandButton.classList.replace('btn-warning', 'btn-secondary');
+                    raiseHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Bajar Mano';
+                } else {
+                    socket.emit('lower hand', { token: '{{ token }}', user: '{{ nombre_completo }}' });
+                    raiseHandButton.classList.replace('btn-secondary', 'btn-warning');
+                    raiseHandButton.innerHTML = '<i class="fas fa-hand-paper"></i> Levantar Mano';
+                }
+            });
+
+            function appendMessage(msg) {
+                const messageElement = document.createElement('div');
+                messageElement.textContent = msg;
+                chatBox.appendChild(messageElement);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            function updateHandRaisedList(hands) {
+                handRaisedList.innerHTML = '<h3>Manos Levantadas</h3>';
+                hands.forEach((user) => {
+                    const userElement = document.createElement('div');
+                    userElement.textContent = user;
+                    handRaisedList.appendChild(userElement);
+                });
+            }
         });
     </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

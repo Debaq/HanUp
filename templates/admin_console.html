@@ -3,91 +3,171 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consola de Administrador - HanUP</title>
+    <title>Consola de Administrador - Reunión: {{ token }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <style>
+        #chat-box, #participants-list, #raised-hands-list {
+            height: 300px;
+            overflow-y: scroll;
+        }
+    </style>
 </head>
 <body>
     <div class="container mt-3">
         <h1 class="text-center mb-4">Consola de Administrador - Reunión: {{ token }}</h1>
+
         <div class="row">
             <div class="col-md-8">
-                <div id="chat-box" class="border p-3 mb-3" style="height: 300px; overflow-y: scroll;">
-                    <!-- Aquí se mostrarán los mensajes del chat -->
+                <div id="chat-box" class="border p-3 mb-3"></div>
+                <div class="input-group mb-3">
+                    <input type="text" id="message-input" class="form-control" placeholder="Escribe tu mensaje...">
+                    <button id="send-button" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Enviar
+                    </button>
                 </div>
             </div>
             <div class="col-md-4">
                 <h3>Participantes</h3>
-                <ul id="participants-list" class="list-group mb-3">
-                    <!-- Aquí se mostrarán los participantes -->
-                </ul>
+                <div id="participants-list" class="border p-3 mb-3"></div>
                 <h3>Manos Levantadas</h3>
-                <ul id="hands-list" class="list-group mb-3">
-                    <!-- Aquí se mostrarán las manos levantadas -->
-                </ul>
-                <button id="lower-all-hands" class="btn btn-warning mb-3 w-100">Bajar todas las manos</button>
+                <div id="raised-hands-list" class="border p-3 mb-3"></div>
+                <button id="lower-all-hands" class="btn btn-warning">
+                    <i class="fas fa-hand-paper"></i> Bajar todas las manos
+                </button>
             </div>
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        const socket = io({query: {token: '{{ token }}'}});
-        const chatBox = document.getElementById('chat-box');
-        const participantsList = document.getElementById('participants-list');
-        const handsList = document.getElementById('hands-list');
-        const lowerAllHandsButton = document.getElementById('lower-all-hands');
-
-        socket.on('chat message', (msg) => {
-            appendMessage(msg);
-        });
-
-        socket.on('chat history', (history) => {
-            chatBox.innerHTML = '';
-            history.forEach(appendMessage);
-        });
-
-        socket.on('update participants', (participants) => {
-            participantsList.innerHTML = '';
-            participants.forEach(participant => {
-                const item = document.createElement('li');
-                item.className = 'list-group-item';
-                item.textContent = participant;
-                participantsList.appendChild(item);
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const socket = io({
+                query: {
+                    token: '{{ token }}'
+                }
             });
-        });
 
-        socket.on('update hands', (users) => {
-            handsList.innerHTML = '';
-            users.forEach(user => {
-                const item = document.createElement('li');
-                item.className = 'list-group-item d-flex justify-content-between align-items-center';
-                item.textContent = user;
-                const button = document.createElement('button');
-                button.className = 'btn btn-sm btn-danger';
-                button.innerHTML = '<i class="fas fa-hand-paper"></i> Bajar';
-                button.onclick = () => lowerHand(user);
-                item.appendChild(button);
-                handsList.appendChild(item);
+            const chatBox = document.getElementById('chat-box');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const participantsList = document.getElementById('participants-list');
+            const raisedHandsList = document.getElementById('raised-hands-list');
+            const lowerAllHandsButton = document.getElementById('lower-all-hands');
+
+            socket.on('connect', () => {
+                console.log('Conectado al servidor');
+                socket.emit('join', { token: '{{ token }}', username: 'Administrador' });
             });
-        });
 
-        function appendMessage(msg) {
-            const item = document.createElement('div');
-            item.textContent = msg;
-            chatBox.appendChild(item);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
+            socket.on('chat history', (messages) => {
+                chatBox.innerHTML = '';
+                messages.forEach((msg) => {
+                    appendMessage(msg);
+                });
+            });
 
-        function lowerHand(user) {
-            socket.emit('lower hand', {token: '{{ token }}', user: user});
-        }
+            socket.on('chat message', (msg) => {
+                appendMessage(msg);
+            });
 
-        lowerAllHandsButton.addEventListener('click', () => {
-            socket.emit('lower all hands', {token: '{{ token }}'});
+            socket.on('update hands', (hands) => {
+                updateRaisedHandsList(hands);
+            });
+
+            socket.on('update participants', (participants) => {
+                updateParticipantsList(participants);
+            });
+
+            sendButton.addEventListener('click', () => {
+                const message = messageInput.value.trim();
+                if (message) {
+                    socket.emit('chat message', { token: '{{ token }}', message: `Administrador: ${message}` });
+                    messageInput.value = '';
+                }
+            });
+
+            lowerAllHandsButton.addEventListener('click', () => {
+                fetch('/lower_all_hands/{{ token }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Todas las manos bajadas con éxito');
+                    } else {
+                        console.error('Error al bajar todas las manos:', data.error);
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+            });
+
+            function appendMessage(msg) {
+                const messageElement = document.createElement('div');
+                messageElement.textContent = msg;
+                chatBox.appendChild(messageElement);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            function updateRaisedHandsList(hands) {
+                raisedHandsList.innerHTML = '';
+                hands.forEach((user, index) => {
+                    const userElement = document.createElement('div');
+                    userElement.className = 'd-flex justify-content-between align-items-center mb-2';
+                    userElement.innerHTML = `
+                        <span>${index + 1}. ${user}</span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-success me-1" onclick="notifyTurn('${user}')">
+                                <i class="fas fa-microphone"></i> Es tu turno
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="lowerHand('${user}')">
+                                <i class="fas fa-hand-paper"></i> Bajar mano
+                            </button>
+                        </div>
+                    `;
+                    raisedHandsList.appendChild(userElement);
+                });
+            }
+
+            function updateParticipantsList(participants) {
+                participantsList.innerHTML = '';
+                participants.forEach((participant) => {
+                    const participantElement = document.createElement('div');
+                    participantElement.textContent = participant;
+                    participantsList.appendChild(participantElement);
+                });
+            }
+
+            window.notifyTurn = function(user) {
+                socket.emit('notify turn', { token: '{{ token }}', user: user });
+            }
+
+            window.lowerHand = function(user) {
+                fetch('/lower_hand/{{ token }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ user: user })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log(`Mano de ${user} bajada con éxito`);
+                    } else {
+                        console.error(`Error al bajar la mano de ${user}:`, data.error);
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+            }
         });
     </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
